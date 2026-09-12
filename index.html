@@ -1713,7 +1713,8 @@ function loadAlcances(wb, mapped) {
   });
 }
 
-function handleExcel(f) {
+function handleExcel(f, opts) {
+  opts = opts || {};
   var reader=new FileReader();
   reader.onload=function(e) {
     try {
@@ -1733,8 +1734,9 @@ function handleExcel(f) {
       if (!mapped.length) throw new Error('Sin proyectos. Columnas: '+Object.keys(rows[0]).join(' | '));
       loadAlcances(wb, mapped);
 
-      // 1. Archivar versión actual ANTES de reemplazar datos
-      archiveNow(curVLabel+' (antes de actualizar)');
+      // 1. Archivar la versión actual solo en cargas manuales.
+      // La carga automática ocurre en cada apertura y no debe duplicar el historial.
+      if (!opts.skipArchive) archiveNow(curVLabel+' (antes de actualizar)');
 
       // 2. Cargar nuevos proyectos y modificaciones
       PROJECTS=mapped;
@@ -1768,6 +1770,26 @@ function handleCSV(f) {
       showSt('ok','✅ '+mapped.length+' proyectos cargados'+(disc.length?' · '+disc.length+' vacías':''));
     } catch(err){ showSt('err','❌ '+err.message); }
   },error:function(err){ showSt('err','❌ CSV: '+err.message); }});
+}
+
+// Carga automática de la plantilla publicada junto a la aplicación.
+// El parámetro de versión evita reutilizar una copia antigua del navegador o CDN.
+function loadDefaultTemplate() {
+  var templateName='Plantilla_SSF_Proyectos_2026(1).xlsx';
+  var templateUrl='./'+encodeURIComponent(templateName)+'?v='+Date.now();
+  showSt('ok','⏳ Cargando información actualizada...');
+  fetch(templateUrl,{cache:'no-store'})
+    .then(function(res){
+      if (!res.ok) throw new Error('No se pudo abrir la plantilla automática (HTTP '+res.status+')');
+      return res.blob();
+    })
+    .then(function(blob){
+      var file=new File([blob],templateName,{type:blob.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      handleExcel(file,{skipArchive:true});
+    })
+    .catch(function(err){
+      showSt('err','⚠️ No se pudo cargar la plantilla automática: '+err.message);
+    });
 }
 
 // ══════════════════════════════════════════
@@ -2061,6 +2083,9 @@ document.addEventListener('DOMContentLoaded', function() {
   } else if (!_store) {
     showSt('err','⚠️ Sin almacenamiento disponible. Los datos no se guardarán entre sesiones.');
   }
+
+  // La plantilla del repositorio es la fuente principal y se consulta en cada apertura.
+  loadDefaultTemplate();
 });
 
 // ══════════════════════════════════════════
