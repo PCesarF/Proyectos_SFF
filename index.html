@@ -1775,21 +1775,39 @@ function handleCSV(f) {
 // Carga automática de la plantilla publicada junto a la aplicación.
 // El parámetro de versión evita reutilizar una copia antigua del navegador o CDN.
 function loadDefaultTemplate() {
-  var templateName='Plantilla_SSF_Proyectos_2026(1).xlsx';
-  var templateUrl='./'+encodeURIComponent(templateName)+'?v='+Date.now();
+  var templateNames=[
+    'Plantilla_SSF_Proyectos_2026.xlsx',
+    'Plantilla_SSF_Proyectos_2026(1).xlsx'
+  ];
   showSt('ok','⏳ Cargando información actualizada...');
-  fetch(templateUrl,{cache:'no-store'})
-    .then(function(res){
-      if (!res.ok) throw new Error('No se pudo abrir la plantilla automática (HTTP '+res.status+')');
-      return res.blob();
-    })
-    .then(function(blob){
-      var file=new File([blob],templateName,{type:blob.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      handleExcel(file,{skipArchive:true});
-    })
-    .catch(function(err){
-      showSt('err','⚠️ No se pudo cargar la plantilla automática: '+err.message);
-    });
+
+  function tryTemplate(idx) {
+    if (idx >= templateNames.length) {
+      showSt('err','⚠️ No se encontró la plantilla automática. Se mantiene la última versión guardada.');
+      return;
+    }
+    var templateName=templateNames[idx];
+    var templateUrl='./'+encodeURIComponent(templateName)+'?v='+Date.now();
+
+    fetch(templateUrl,{cache:'no-store'})
+      .then(function(res){
+        if (!res.ok) {
+          if (res.status===404) return tryTemplate(idx+1);
+          throw new Error('No se pudo abrir la plantilla automática (HTTP '+res.status+')');
+        }
+        return res.blob().then(function(blob){
+          var file=new File([blob],templateName,{type:blob.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+          handleExcel(file,{skipArchive:true});
+          var vl=$('vLabel');
+          if (vl) vl.textContent='Fuente automática: '+templateName+' · '+new Date().toLocaleString('es-CO');
+        });
+      })
+      .catch(function(err){
+        showSt('err','⚠️ No se pudo cargar la plantilla automática: '+err.message);
+      });
+  }
+
+  tryTemplate(0);
 }
 
 // ══════════════════════════════════════════
