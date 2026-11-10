@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seguimiento de Dotación 2026 · Comfenalco Cartagena</title>
-<meta name="version" content="v38">
+<meta name="version" content="v39">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1249,7 +1249,7 @@ function fechaArchivoCO(d){
   return `${p.year}-${p.month}-${p.day}`;
 }
 let STATE = {
-  rows: recalcMensual(clone(SEED_DATA)),
+  rows: [],
   dim: 'ceco',
   filter: null,
   corte: '21.08.2026',
@@ -2533,55 +2533,54 @@ function cargarPlantillaAutomatica(){
   const nombre='Plantilla_Ejecucion_Dotacion_2026_Nva.xlsx';
   const endpointDrive='https://script.google.com/macros/s/AKfycbzevpwRXZKN0BrXiZov68gnYM_xtbUOAqgsq4sBusDc9COc9xdkerNpF9xh55nfhLy3/exec';
 
-  function base64AB64(base64){
+  function base64ABytes(base64){
     const bin=atob(base64);
     const bytes=new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
     return bytes;
   }
 
-  function aplicarBlob(blob,origen,ultimaModificacion){
-    const file=new File([blob],nombre,{type:blob.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    handleFile(file,{automatic:true});
+  function marcarEstado(texto,esError){
     const cf=document.getElementById('corteDatos');
     if(cf){
-      const fecha=ultimaModificacion ? new Date(ultimaModificacion).toLocaleString('es-CO',{timeZone:'America/Bogota'}) : new Date().toLocaleString('es-CO',{timeZone:'America/Bogota'});
-      cf.textContent='Fuente: '+origen+' · actualización '+fecha;
+      cf.textContent=texto;
+      cf.style.color=esError ? '#ffd0d0' : '#9fb4dd';
     }
   }
 
-  function cargarRespaldoGitHub(errorDrive){
-    console.warn('No se pudo leer Drive; se usa respaldo local.',errorDrive);
-    const url='./'+encodeURIComponent(nombre)+'?actualizacion='+Date.now();
-    return fetch(url,{cache:'no-store'})
-      .then(res=>{
-        if(!res.ok) throw new Error('HTTP '+res.status);
-        return res.blob();
-      })
-      .then(blob=>{
-        aplicarBlob(blob,'respaldo GitHub',null);
-        toast('No se pudo consultar Drive. Se cargó la última copia disponible en GitHub.',true);
-      });
-  }
+  marcarEstado('Fuente: Google Drive · consultando información actualizada…',false);
 
-  fetch(endpointDrive+'?t='+Date.now(),{cache:'no-store',redirect:'follow'})
+  fetch(endpointDrive+'?t='+Date.now(),{
+    method:'GET',
+    cache:'no-store',
+    redirect:'follow',
+    mode:'cors'
+  })
     .then(res=>{
       if(!res.ok) throw new Error('Apps Script HTTP '+res.status);
       return res.json();
     })
     .then(data=>{
-      if(!data || !data.ok || !data.base64) throw new Error((data&&data.error)||'Respuesta inválida del servicio de Drive');
-      const bytes=base64AB64(data.base64);
+      if(!data || data.ok!==true) throw new Error((data&&data.error)||'El servicio de Drive respondió con error');
+      if(!data.base64) throw new Error('La respuesta del servicio no contiene el archivo Excel');
+      const bytes=base64ABytes(data.base64);
       const blob=new Blob([bytes],{type:data.mimeType||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      aplicarBlob(blob,'Google Drive',data.ultimaModificacion||null);
+      const file=new File([blob],nombre,{type:blob.type});
+      handleFile(file,{automatic:true});
+
+      const fecha=data.ultimaModificacion
+        ? new Date(data.ultimaModificacion).toLocaleString('es-CO',{timeZone:'America/Bogota'})
+        : new Date().toLocaleString('es-CO',{timeZone:'America/Bogota'});
+      marcarEstado('Fuente: Google Drive · archivo actualizado '+fecha,false);
       toast('Información actualizada automáticamente desde Google Drive.');
     })
     .catch(err=>{
-      cargarRespaldoGitHub(err).catch(err2=>{
-        console.error('Carga automática de plantilla',err2);
-        registrarLog('VALIDACION','No se pudo cargar la plantilla automática',String(err2&&err2.message||err2));
-        toast('No se pudo actualizar automáticamente la información. Se muestran los datos disponibles.',true);
-      });
+      console.error('Error al consultar Google Drive / Apps Script',err);
+      STATE.rows=[];
+      renderAll();
+      marcarEstado('ERROR: no se pudo leer Google Drive · '+String(err&&err.message||err),true);
+      registrarLog('VALIDACION','Fallo de conexión con Google Drive',String(err&&err.message||err));
+      toast('No se pudo leer Google Drive. No se muestran datos antiguos para evitar información incorrecta.',true);
     });
 }
 
@@ -3651,7 +3650,7 @@ function descargarLog(){
 
 /* ====== INIT ====== */
 renderAll();
-registrarLog('CARGA','Apertura de la herramienta','Información cargada al abrir · última actualización registrada: '+(STATE.actualizado||STATE.corte), resumenEstado(STATE.rows));
+registrarLog('CARGA','Apertura de la herramienta','Esperando lectura automática de Google Drive.', resumenEstado(STATE.rows));
 cargarPlantillaAutomatica();
 
 
