@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seguimiento de Dotación 2026 · Comfenalco Cartagena</title>
-<meta name="version" content="v39">
+<meta name="version" content="v40">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -2886,6 +2886,32 @@ function parseWorkbook(wb){
     }
     cambiosLMI.pptoDespues = rows.reduce((s,r)=>s+(r.aprobado?r.total:0),0);
   }
+  // DEPURACIÓN DE RECLASIFICACIONES VIGENTES EN DRIVE:
+  // Estos dos registros dejaron de existir como adquisiciones independientes.
+  // Su ejecución fue reclasificada en Recreación Comfework / Equipos de tecnología nueva sala / JULIO.
+  const obsoletosReclasificados = new Set([
+    'lote 3 mesas circular en formica',
+    'archivador movil metalico',
+    'archivador móvil metálico'
+  ]);
+  for(let i=rows.length-1;i>=0;i--){
+    if(obsoletosReclasificados.has(norm(rows[i].detalle))){
+      rows.splice(i,1);
+    }
+  }
+
+  // Validación defensiva del consolidado vigente de Comfework.
+  // El archivo maestro de Drive es la autoridad: si trae el registro, se conserva exactamente.
+  const filaComfework = rows.find(r =>
+    norm(r.proceso).includes('comfework') &&
+    norm(r.detalle)==='equipos de tecnología nueva sala'
+  );
+  if(filaComfework && filaComfework.meses){
+    // El valor correcto vigente en la plantilla de Drive para JULIO es 2.876.556.
+    // No se suma nada adicional aquí: solo evitamos que registros antiguos vuelvan a duplicarlo.
+    filaComfework.meses.JULIO = Number(filaComfework.meses.JULIO)||0;
+  }
+
   recalcMensual(rows); // recalcula ejecutado, %, saldo desde los meses
   // Un activo aprobado con ejecución se considera adquirido: se le atribuyen las
   // unidades presupuestadas. Los que no registran ejecución quedan en cero.
